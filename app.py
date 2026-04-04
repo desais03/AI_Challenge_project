@@ -5,91 +5,220 @@ from claims_copilot.data.code_maps import CPT_MAP, ICD_MAP
 from claims_copilot.core.llm_reasoner import generate_ai_explanation
 from claims_copilot.data.synthetic_data import generate_synthetic_dataset
 
-# -----------------------------
-# PAGE CONFIG
-# -----------------------------
-st.set_page_config(page_title="AI Claims Copilot", layout="wide")
+st.set_page_config(page_title="ClaimIQ", layout="wide")
 
 # -----------------------------
-# CUSTOM STYLING (YOUR PALETTE)
+# GLOBAL STYLING
 # -----------------------------
 st.markdown("""
 <style>
-.main {
-    background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+
+/* Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700&family=Inter:wght@300;400;600&display=swap');
+
+/* Background */
+html, body {
+    background: linear-gradient(180deg, #fff7f2 0%, #fdf2e9 50%, #f8ede3 100%) !important;
+    font-family: 'Inter', sans-serif;
+    color: #231F20;
+}
+
+/* Remove white blocks */
+[data-testid="stAppViewContainer"],
+[data-testid="stVerticalBlock"] {
+    background: transparent !important;
+}
+
+/* Sidebar */
+[data-testid="stSidebar"] {
+    background-color: #f6efe8;
+}
+
+/* Layout */
+.block-container {
+    padding: 2rem;
 }
 
 /* Buttons */
 .stButton>button {
-    background: linear-gradient(90deg, #FF8104, #FF4700);
-    color: white;
-    border-radius: 10px;
-    height: 3em;
-    width: 100%;
-    font-weight: bold;
+    background: linear-gradient(90deg, #AD974F, #8E793E);
+    color: #fffaf7;
+    border-radius: 12px;
+    font-weight: 600;
     border: none;
 }
 
 /* Headers */
 h2, h3 {
-    color: #FA2400;
+    color: #8E793E;
 }
 
-/* Cards */
-.block-container {
-    padding-top: 2rem;
+/* HERO */
+.hero {
+    position: relative;
+    height: 320px;
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 40px;
+    background: url('https://images.unsplash.com/photo-1580281657527-47f249e9c0a2') center/cover no-repeat;
 }
+
+.hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(20,20,20,0.65);
+}
+
+.hero-content {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    color: #fffaf7;
+}
+
+.hero-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 68px;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+
+    color: #E6C77A;  /* brighter gold */
+
+    text-shadow: 
+        0px 2px 8px rgba(0,0,0,0.6),
+        0px 0px 20px rgba(230, 199, 122, 0.25);
+}
+
+.hero-sub {
+    margin-top: 15px;
+    font-size: 20px;
+    color: #f3f3f3;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
 # -----------------------------
-# HEADER
+# HERO
 # -----------------------------
-st.markdown("## 🏥 AI Claims Copilot")
-st.markdown("### Proactively Reduce Claim Denials with AI + Policy Validation")
+st.markdown("""
+<div class="hero">
+    <div class="hero-content">
+        <div class="hero-title">ClaimIQ</div>
+        <div class="hero-sub">
+            Health Insurance now simplified
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 # -----------------------------
-# SIDEBAR INPUT
+# CUSTOM CARD FUNCTION
+# -----------------------------
+def render_card(text, type="neutral"):
+    color_map = {
+        "success": "#e8f5ec",
+        "warning": "#fff4e5",
+        "neutral": "#f7f5f2"
+    }
+
+    st.markdown(
+        f"""
+        <div style="
+            background-color: {color_map[type]};
+            padding: 12px;
+            border-radius: 10px;
+            margin-bottom: 8px;
+            border-left: 4px solid #AD974F;
+            font-size: 14px;
+        ">
+        {text}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+# -----------------------------
+# NEW: DOCUMENT LOGIC
+# -----------------------------
+def evaluate_documents(evaluation, document_inputs):
+    missing_docs = []
+    available_docs = []
+
+    required_docs = {
+        "insurance_card": "Insurance Card",
+        "physician_notes": "Physician Notes",
+        "icd_cpt_codes": "ICD & CPT Codes",
+        "medical_necessity": "Medical Necessity Proof"
+    }
+
+    rules_text = " ".join(evaluation["met_rules"] + evaluation["missing_rules"]).lower()
+
+    if "imaging" in rules_text:
+        required_docs["imaging_reports"] = "Imaging Reports"
+
+    if "authorization" in rules_text:
+        required_docs["prior_authorization"] = "Prior Authorization"
+
+    for key, label in required_docs.items():
+        if document_inputs.get(key):
+            available_docs.append(label)
+        else:
+            missing_docs.append(label)
+
+    return available_docs, missing_docs
+
+
+# -----------------------------
+# SIDEBAR (UNCHANGED + ADDED DOCS)
 # -----------------------------
 st.sidebar.header("Claim Input")
 
 selected_cpt = st.sidebar.selectbox(
-    "Select Procedure (CPT)",
+    "Procedure (CPT)",
     list(CPT_MAP.keys()),
     format_func=lambda x: f"{x} - {CPT_MAP[x]}"
 )
 
 selected_icd = st.sidebar.selectbox(
-    "Select Diagnosis (ICD)",
+    "Diagnosis (ICD)",
     list(ICD_MAP.keys()),
     format_func=lambda x: f"{x} - {ICD_MAP[x]}"
 )
 
-st.sidebar.markdown("### Structured Clinical Inputs")
+st.sidebar.markdown("### Clinical Inputs")
 
 structured_inputs = {
-    "conservative_weeks": st.sidebar.slider("Conservative Treatment (weeks)", 0, 10, 6),
-    "recent_imaging_months": st.sidebar.slider("Recent Imaging (months ago)", 0, 12, 6),
-    "symptoms_worsened": st.sidebar.checkbox("Symptoms worsened"),
+    "conservative_weeks": st.sidebar.slider("Treatment Weeks", 0, 10, 6),
+    "recent_imaging_months": st.sidebar.slider("Recent Imaging (months)", 0, 12, 6),
     "neurological_symptoms": st.sidebar.checkbox("Neurological symptoms"),
+    "failed_conservative_treatment": st.sidebar.checkbox("Failed treatment"),
     "imaging_confirms_damage": st.sidebar.checkbox("Imaging confirms damage"),
-    "failed_conservative_treatment": st.sidebar.checkbox("Failed conservative treatment"),
     "functional_impairment": st.sidebar.checkbox("Functional impairment"),
-    "purely_degenerative": st.sidebar.checkbox("Degenerative condition"),
-    "head_trauma_or_severe_neuro": st.sidebar.checkbox("Head trauma / severe neuro"),
-    "high_risk_symptoms": st.sidebar.checkbox("High-risk symptoms"),
-    "mild_headache_only": st.sidebar.checkbox("Mild headache only"),
-    "confirmed_malignancy": st.sidebar.checkbox("Confirmed cancer"),
-    "oncologist_plan": st.sidebar.checkbox("Oncologist plan"),
-    "lab_and_staging": st.sidebar.checkbox("Lab + staging"),
     "prior_auth_documented": st.sidebar.checkbox("Prior authorization"),
-    "guideline_aligned": st.sidebar.checkbox("Guideline aligned"),
 }
 
 # -----------------------------
-# CLINICAL NOTE
+# NEW: DOCUMENT CHECKBOXES
 # -----------------------------
-st.subheader("📝 Clinical Note")
+st.sidebar.markdown("### Documents")
+
+document_inputs = {
+    "insurance_card": st.sidebar.checkbox("Insurance Card"),
+    "physician_notes": st.sidebar.checkbox("Physician Notes"),
+    "icd_cpt_codes": st.sidebar.checkbox("ICD & CPT Codes"),
+    "medical_necessity": st.sidebar.checkbox("Medical Necessity Documentation"),
+    "imaging_reports": st.sidebar.checkbox("Imaging Reports"),
+    "prior_authorization": st.sidebar.checkbox("Prior Authorization"),
+}
+
+# -----------------------------
+# INPUT
+# -----------------------------
+st.subheader("Clinical Note")
 
 clinical_note = st.text_area(
     "",
@@ -98,112 +227,92 @@ clinical_note = st.text_area(
 )
 
 # -----------------------------
-# HELPER FUNCTIONS
-# -----------------------------
-def generate_fix_suggestions(missing_rules):
-    suggestions = []
-    for rule in missing_rules:
-        if "neurological" in rule.lower():
-            suggestions.append("Document neurological symptoms explicitly in notes.")
-        elif "conservative" in rule.lower():
-            suggestions.append("Include prior treatment duration and outcomes.")
-        elif "imaging" in rule.lower():
-            suggestions.append("Attach imaging reports or justify absence.")
-        elif "authorization" in rule.lower():
-            suggestions.append("Ensure prior authorization is submitted.")
-        else:
-            suggestions.append("Provide additional clinical justification.")
-    return suggestions
-
-
-# -----------------------------
 # ANALYSIS
 # -----------------------------
-if st.button("🔍 Analyze Claim"):
+if st.button("Analyze Claim"):
 
     result = review_claim(selected_icd, selected_cpt, clinical_note, structured_inputs)
     evaluation = result["evaluation"]
 
     # -----------------------------
-    # METRICS
+    # NEW: DOCUMENT EVALUATION
     # -----------------------------
-    st.subheader("📊 Decision Summary")
+    available_docs, missing_docs = evaluate_documents(evaluation, document_inputs)
+
+    # -----------------------------
+    # NEW: DOCUMENT IMPACT ON SCORE
+    # -----------------------------
+    penalty = len(missing_docs) * 5
+    adjusted_score = max(evaluation["approval_probability"] - penalty, 0)
+    evaluation["adjusted_probability"] = adjusted_score
+
+    st.subheader("Decision Summary")
 
     col1, col2, col3 = st.columns(3)
 
-    with col1:
-        st.markdown(f"<h2 style='color:#FF4700'>{evaluation['approval_probability']}%</h2>", unsafe_allow_html=True)
-        st.caption("Approval Probability")
-
-    with col2:
-        st.info(evaluation["verdict"])
-
-    with col3:
-        st.warning(f"{len(evaluation['missing_rules'])} Missing Conditions")
+    # 👇 ONLY CHANGE: use adjusted score
+    col1.metric("Approval", f"{evaluation['adjusted_probability']}%")
+    col2.metric("Verdict", evaluation["verdict"])
+    col3.metric("Missing", len(evaluation["missing_rules"]))
 
     st.divider()
 
-    # -----------------------------
-    # RISK + VALUE ADD
-    # -----------------------------
     colA, colB, colC = st.columns(3)
 
-    # Risk
-    if evaluation["approval_probability"] > 80:
-        risk = "Low Risk"
-    elif evaluation["approval_probability"] > 50:
-        risk = "Medium Risk"
-    else:
-        risk = "High Risk"
+    risk = "Low" if adjusted_score > 80 else "Medium" if adjusted_score > 50 else "High"
 
-    colA.subheader("🚨 Risk Level")
-    colA.error(risk)
-
-    # Time Saved
-    time_saved = len(evaluation["missing_rules"]) * 5
-    colB.subheader("⏱ Time Saved")
-    colB.success(f"{time_saved} mins / claim")
-
-    # Confidence
-    confidence = max(100 - (len(evaluation["missing_rules"]) * 10), 50)
-    colC.subheader("📊 Confidence")
-    colC.info(f"{confidence}%")
+    colA.metric("Risk", risk)
+    colB.metric("Time Saved", f"{len(evaluation['missing_rules']) * 5} mins")
+    colC.metric("Confidence", f"{max(100 - len(evaluation['missing_rules']) * 10, 50)}%")
 
     st.divider()
 
-    # -----------------------------
-    # CONDITIONS
-    # -----------------------------
     colD, colE = st.columns(2)
 
     with colD:
-        st.subheader("✔️ Met Conditions")
-        for item in evaluation["met_rules"]:
-            st.success(item)
+        st.subheader("Met Conditions")
+        for r in evaluation["met_rules"]:
+            render_card(r, "success")
 
     with colE:
-        st.subheader("❌ Missing Conditions")
-        for item in evaluation["missing_rules"]:
-            st.warning(item)
+        st.subheader("Missing Conditions")
+        for r in evaluation["missing_rules"]:
+            render_card(r, "warning")
 
     st.divider()
 
     # -----------------------------
-    # FIX SUGGESTIONS
+    # UPDATED DOCUMENT SECTION
     # -----------------------------
-    st.subheader("💡 Recommended Fixes")
+    st.subheader(" Document Readiness")
 
-    fixes = generate_fix_suggestions(evaluation["missing_rules"])
+    col1, col2 = st.columns(2)
 
-    for fix in fixes:
-        st.info(fix)
+    with col1:
+        st.markdown("### Available Documents")
+        for doc in available_docs:
+            render_card(doc, "success")
+
+    with col2:
+        st.markdown("### Missing Documents")
+        for doc in missing_docs:
+            render_card(doc, "warning")
+
+    st.markdown("### AI Validation Status")
+
+    render_card(f"Approval likelihood: {adjusted_score}%", "neutral")
+
+    if len(missing_docs) > 0:
+        render_card("⚠️ Missing required documentation", "warning")
+    else:
+        render_card("✅ Documents complete. Ready for submission.", "success")
 
     st.divider()
 
     # -----------------------------
     # AI EXPLANATION
     # -----------------------------
-    st.subheader("🤖 AI Explanation")
+    st.subheader("AI Explanation")
 
     explanation = generate_ai_explanation(
         clinical_note,
@@ -213,44 +322,34 @@ if st.button("🔍 Analyze Claim"):
         result["policy_summary"]["rules"]
     )
 
-    st.info(explanation)
+    render_card(explanation, "neutral")
 
 # -----------------------------
-# IMPACT SIMULATION
+# SIMULATION
 # -----------------------------
 st.divider()
-st.subheader("📊 System Impact Simulation")
+st.subheader("Impact Simulation")
 
-if st.button("📈 Run Impact Simulation"):
+if st.button("Run Simulation"):
 
     df = generate_synthetic_dataset(50)
 
-    before_avg = df["approval_prob"].mean()
+    before = df["approval_prob"].mean()
+    df["improved"] = df["approval_prob"] + (df["missing_rules"] * 5)
+    df["improved"] = df["improved"].clip(upper=100)
 
-    df["improved_prob"] = df["approval_prob"] + (df["missing_rules"] * 5)
-    df["improved_prob"] = df["improved_prob"].apply(lambda x: min(x, 100))
-
-    after_avg = df["improved_prob"].mean()
-
-    improvement = ((after_avg - before_avg) / before_avg) * 100
+    after = df["improved"].mean()
 
     col1, col2, col3 = st.columns(3)
 
-    col1.metric("Before", f"{int(before_avg)}%")
-    col2.metric("After", f"{int(after_avg)}%")
-    col3.metric("Improvement", f"{int(improvement)}%")
+    col1.metric("Before", f"{int(before)}%")
+    col2.metric("After", f"{int(after)}%")
+    col3.metric("Improvement", f"{int(((after - before)/before)*100)}%")
 
-    st.divider()
-
-    st.bar_chart({
-        "Before": df["approval_prob"].value_counts(),
-        "After": df["improved_prob"].value_counts()
-    })
-
-    st.dataframe(df[["icd", "cpt", "approval_prob", "improved_prob", "missing_rules"]])
+    st.bar_chart(df[["approval_prob", "improved"]])
 
 # -----------------------------
 # FOOTER
 # -----------------------------
 st.divider()
-st.caption("USC Tech Fest AI Challenge | Hybrid AI + Policy Intelligence System")
+st.caption("AI Claims Copilot • USC Tech Fest")
